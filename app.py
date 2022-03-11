@@ -329,7 +329,12 @@ def create_figure_sankey(df_outflow_top, df_outflow_rest, df_outflow_borough, pi
     df_outflow_top['dropoff_borough'] = df_outflow_top.dropoff_zone.map(zone_index_to_borough_index)
 
     label_offset_zones = len(list(bmapper.values()))
-    labels = list(bmapper.values()) + list(zmapper.values()) + list([f'Other: {k}' for k in bmapper.values()])
+    labels = (
+        list(bmapper.values())
+        + list(zmapper.values())
+        + [f'Other: {k}' for k in bmapper.values()]
+    )
+
 
     # overwrite the borough label with one that includes the zone name
     start_name = f'{borough_index_to_name[pickup_borough]} - {zone_index_to_name[pickup_zone]}'
@@ -422,12 +427,11 @@ def create_selection(days, hours):
 def compute_heatmap_data(days, hours, heatmap_limits):
     logger.info("Compute: heatmap data: days=%r hours=%r limits=%r", days, hours, heatmap_limits)
     df, selection = create_selection(days, hours)
-    heatmap_data_array = df.count(binby=[df.pickup_longitude, df.pickup_latitude],
+    return df.count(binby=[df.pickup_longitude, df.pickup_latitude],
                                   selection=selection,
                                   limits=heatmap_limits,
                                   shape=256,
                                   array_type="xarray")
-    return heatmap_data_array
 
 
 @cache.memoize(timeout=CACHE_TIMEOUT)
@@ -514,13 +518,11 @@ def compute_flow_data(days, hours, zone):
                                             dropoff_zone=-1,
                                             count_trips=-1)[:0]
 
-    # return as dict and lists so it can be serialized by the memoize decorator
-    flow_data = dict(
+    return dict(
         outflow_top=df_outflow_top.to_dict(array_type='list'),
         outflow_rest=df_outflow_rest.to_dict(array_type='list'),
         outflow_borough=df_outflow_borough.to_dict(array_type='list')
     )
-    return flow_data
 
 
 # ######################################
@@ -704,15 +706,10 @@ def update_heatmap_figure(days, hours, heatmap_limits, trip_start, trip_end):
     prevent_initial_call=True)
 def update_limits(relayoutData, heatmap_limits):
     logger.info('Interaction: map/zoom on heatmap detected: relayoutData=%r heatmap_limits=%r', relayoutData, heatmap_limits)
-    if relayoutData is None:
+    if relayoutData is None or 'xaxis.range[0]' not in relayoutData:
         raise dash.exceptions.PreventUpdate
-    elif relayoutData is not None and 'xaxis.range[0]' in relayoutData:
-        d = relayoutData
-        heatmap_limits = [[d['xaxis.range[0]'], d['xaxis.range[1]']], [d['yaxis.range[0]'], d['yaxis.range[1]']]]
-    else:
-        raise dash.exceptions.PreventUpdate
-        if heatmap_limits is None:
-            heatmap_limits = heatmap_limits_initial
+    d = relayoutData
+    heatmap_limits = [[d['xaxis.range[0]'], d['xaxis.range[1]']], [d['yaxis.range[0]'], d['yaxis.range[1]']]]
     return heatmap_limits
 
 
@@ -862,10 +859,12 @@ def update_flow_figures(days, hours, zone):
 def trip_details_summary(days, hours, trip_start, trip_end):
     if trip_start is None or trip_end is None:
         fig_empty = create_figure_empty()
-        if trip_start is None:
-            text = '''Please select a start location on the map.'''
-        else:
-            text = '''Please select a destination location on the map.'''
+        text = (
+            '''Please select a start location on the map.'''
+            if trip_start is None
+            else '''Please select a destination location on the map.'''
+        )
+
         return fig_empty, fig_empty, text, "trigger loader"
 
     trip_detail_data = compute_trip_details(days, hours, trip_start, trip_end)
